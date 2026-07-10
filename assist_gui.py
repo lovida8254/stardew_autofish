@@ -7,9 +7,11 @@
 
 실행:  pythonw assist_gui.py   (콘솔 없이)  또는  python assist_gui.py
 """
+import os
 import threading
 import time
 import ctypes
+from datetime import datetime
 
 import tkinter as tk
 
@@ -17,7 +19,7 @@ import numpy as np
 import mss
 import pydirectinput
 
-from main import load_config, grab, detect, BarController, Mouse
+from main import load_config, grab, detect, BarController, Mouse, _runtime_dir
 
 pydirectinput.PAUSE = 0
 pydirectinput.FAILSAFE = False
@@ -88,6 +90,36 @@ class AssistGUI:
         in_prev = False
         last_press = False
         bar_seen_t = 0.0
+        last_log = 0.0
+        # 미니게임별 통계(문제 진단용): 프레임/물고기검출/추적오차/inside(바 안에 있던 비율)
+        mg_frames = 0
+        mg_fish = 0
+        mg_inside = 0
+        mg_errs = []
+        mg_start = 0.0
+        mg_no = 0
+
+        # ---- 로그 파일 열기(항상 기록). logs/assist_YYYYMMDD_HHMMSS.log ----
+        log = self._open_log(cfg)
+
+        def summarize():
+            if mg_frames <= 0:
+                return
+            dur = time.time() - mg_start
+            if mg_errs:
+                arr = sorted(mg_errs)
+                med = arr[len(arr) // 2]
+                mx = arr[-1]
+                det = 100.0 * mg_fish / mg_frames
+                inside = 100.0 * mg_inside / max(mg_fish, 1)   # 물고기가 바 안에 있던 비율
+                # inside 로 잡음/놓침 추정(확정 아님 — 추후 진행바 판독으로 대체 예정)
+                hint = "잡음추정" if inside >= 60 else ("애매" if inside >= 40 else "놓침추정")
+                log("  << 미니게임#%d 종료 — %.1f초 %d프레임, 물고기검출 %.0f%%, inside %.0f%% [%s], 추적오차 median=%.0f max=%.0f"
+                    % (mg_no, dur, mg_frames, det, inside, hint, med, mx))
+            else:
+                log("  << 미니게임#%d 종료 — %.1f초 %d프레임, 물고기 검출 0%% (색/위치 확인 필요)"
+                    % (mg_no, dur, mg_frames))
+
         try:
             with mss.mss() as sct:
                 while self.running:
@@ -101,15 +133,36 @@ class AssistGUI:
                         press = ctrl.update(t0, bar, fish)
                         last_press = press
                         mouse.set(press, t0, min_pulse)
-                        in_prev = True
+                        if not in_prev:                       # 미니게임 시작 전이(transition)
+                            in_prev = True
+                            mg_no += 1
+                            mg_frames = 0
+                            mg_fish = 0
+                            mg_inside = 0
+                            mg_errs = []
+                            mg_start = t0
+                            log(">> 미니게임#%d 시작" % mg_no)
+                        mg_frames += 1
+                        bc = int(bar["center"])
                         fy = int(fish["center"]) if fish else None
-                        self.status = "미니게임 제어중  bar=%d fish=%s" % (int(bar["center"]), fy)
+                        if fy is not None:
+                            mg_fish += 1
+                            mg_errs.append(abs(bc - fy))
+                            if bar["top"] <= fish["center"] <= bar["bottom"]:
+                                mg_inside += 1                # 물고기가 초록 바 안에 있음
+                        self.status = "미니게임 제어중  bar=%d fish=%s" % (bc, fy)
+                        if t0 - last_log >= 0.1:              # 0.1초 간격 상세 로그
+                            log("   bar=%d fish=%s vel=%.0f pred=%d %s"
+                                % (bc, fy, ctrl.last_vel, int(ctrl.last_pred),
+                                   "UP" if press else "DOWN"))
+                            last_log = t0
                     elif in_prev and (t0 - bar_seen_t) < bar_grace:
                         # 순간 끊김(초록 flicker) — 리셋하지 말고 직전 동작 유지(연속성 보존)
                         mouse.set(last_press, t0, min_pulse)
                     else:
                         if in_prev:
                             in_prev = False
+                            summarize()                       # 미니게임 종료 요약
                         ctrl.reset()
                         mouse.up()
                         self.status = "대기중 — 직접 캐스팅→'!' 후킹하세요"
@@ -117,8 +170,46 @@ class AssistGUI:
                     if el < interval:
                         time.sleep(interval - el)
         finally:
+            if in_prev:
+                summarize()
             mouse.up()                              # 정지 시 반드시 버튼 떼기
+            log("[%s] 세션 종료" % datetime.now().strftime("%H:%M:%S"))
+            self._close_log()
             self.status = "정지"
+
+    # ---------------------------------------------------------------- 로깅
+    def _open_log(self, cfg):
+        """세션 로그 파일을 열고 로그 함수를 반환. 항상 기록(문제 진단용)."""
+        try:
+            logdir = _runtime_dir() / "logs"
+            os.makedirs(logdir, exist_ok=True)
+            path = logdir / ("assist_%s.log" % datetime.now().strftime("%Y%m%d_%H%M%S"))
+            self._logf = open(path, "w", encoding="utf-8")
+            self.logpath = str(path)
+        except Exception:
+            self._logf = None
+            self.logpath = None
+
+        def log(msg):
+            if self._logf is None:
+                return
+            try:
+                self._logf.write(msg + "\n")
+                self._logf.flush()
+            except Exception:
+                pass
+
+        params = {k: cfg.get(k) for k in ("lookahead", "vel_window", "min_pulse", "bar_grace", "aim_offset", "fps")}
+        log("[%s] 세션 시작  params=%s" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), params))
+        return log
+
+    def _close_log(self):
+        try:
+            if getattr(self, "_logf", None):
+                self._logf.close()
+        except Exception:
+            pass
+        self._logf = None
 
     # ---------------------------------------------------------------- 상태 표시 폴링
     def _poll(self):
