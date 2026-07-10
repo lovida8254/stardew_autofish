@@ -3,6 +3,15 @@
 Stardew Valley 자동 낚시 봇. 화면 인식 + 마우스 제어로 낚시 미니게임을 자동 플레이.
 `gui.py`(권장) 또는 `main.py` CLI로 실행. 설정은 `config.json`(없으면 `main.DEFAULT_CONFIG`로 생성).
 
+## 🖥️ GUI + exe 화 (2026-07-10) — 시작/종료 버튼, 자동종료 제거
+
+- **`assist_gui.py` 신설**: 보조모드 GUI. **[시작]/[종료] 토글 버튼 하나**. 워커 스레드가 감시/바제어, GUI는 상태폴링. **전역 키후킹 제거** → ESC/딴작업으로 자동종료 안 됨(사용자 요청). 버튼(또는 창닫기)으로만 정지.
+- **자동종료 원인 규명**: 구 `assist_run.py`의 pynput **전역 ESC 후킹**이 범인. 스타듀에서 ESC=메뉴라 낚시 중 자연스레 누르면 봇 종료됐음.
+- **미니게임 진입 시 게임 freeze 버그 수정(중요)**: GUI 워커가 미니게임마다 `focus_window()`(ALT 트릭)를 매 프레임 호출 → **ALT 이벤트 초당 60발 → 게임 멈춤**. 보조모드는 사용자가 직접 플레이 중이라 게임이 이미 포그라운드 → **focus_window 제거**로 해결(라이브 확인: freeze 사라짐, 클릭 정상). topmost도 제거(사용자 "게임 뒤로 가도 됨").
+- **`main.py` frozen-aware**: `_runtime_dir()`로 exe 옆 config.json 우선 로드(+번들 fallback). exe에서도 튜닝값 적용.
+- **exe 빌드**: `build_exe.bat`(PyInstaller `--onefile --windowed --add-data config.json`). 산출물 `dist\StardewAutoFishing.exe`(~89MB, opencv 포함). exe 옆에 config.json 두면 재빌드 없이 튜닝 가능. **exe/dist/build/*.spec는 .gitignore**(바이너리는 GitHub Release로 배포, 저장소에 커밋 안 함).
+- **실행 경로**: `start_assist.bat`도 GUI 실행(`pythonw assist_gui.py`)으로 변경. 바탕화면 바로가기 그대로 사용 가능.
+
 ## 📦 저장소 (GitHub) — 2026-07-10 초기 커밋/푸시
 - **Repo**: https://github.com/lovida8254/stardew_autofish (**Public**, 개인계정 lovida8254)
 - **origin**: `git@github.com-personal:lovida8254/stardew_autofish.git` (SSH 별칭). 푸시는 `git push`만.

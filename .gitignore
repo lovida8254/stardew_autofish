@@ -9,3 +9,8 @@ venv/
 roi_dbg_*.png
 calib_samples.csv
 fishlog.csv
+
+# PyInstaller build artifacts (exe is distributed via GitHub Releases, not committed)
+build/
+dist/
+*.spec

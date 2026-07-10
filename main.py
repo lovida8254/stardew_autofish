@@ -75,7 +75,14 @@ def focus_window(hwnd):
     user32.keybd_event(0x12, 0, 2, 0)      # ALT up
     return ok
 
-CONFIG_PATH = Path(__file__).parent / "config.json"
+def _runtime_dir() -> Path:
+    """실행 파일이 있는 폴더. 소스 실행=이 파일 폴더, PyInstaller exe=exe 폴더."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent
+    return Path(__file__).parent
+
+
+CONFIG_PATH = _runtime_dir() / "config.json"        # 읽기/쓰기 대상(exe 옆 또는 소스 폴더)
 
 DEFAULT_CONFIG = {
     # --- 미니게임 트랙(초록 바가 오르내리는 세로 물기둥) 영역: 1920x1080 기준 ---
@@ -136,9 +143,15 @@ DEFAULT_CONFIG = {
 
 def load_config() -> dict:
     cfg = DEFAULT_CONFIG.copy()
-    if CONFIG_PATH.exists():
+    # 우선순위: 실행폴더(exe/소스 옆) config.json → (frozen) 번들 내장 config.json → 기본값
+    paths = [CONFIG_PATH]
+    if getattr(sys, "frozen", False):
+        paths.append(Path(getattr(sys, "_MEIPASS", ".")) / "config.json")
+    for p in paths:
         try:
-            cfg.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
+            if p.exists():
+                cfg.update(json.loads(p.read_text(encoding="utf-8")))
+                break
         except Exception as e:
             print(f"[경고] config.json 읽기 실패, 기본값 사용: {e}")
     return cfg
