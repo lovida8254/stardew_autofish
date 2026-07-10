@@ -1,0 +1,61 @@
+{
+  "roi": {
+    "left": 802,
+    "top": 206,
+    "width": 31,
+    "height": 667
+  },
+  "bite_roi": {
+    "left": 948,
+    "top": 378,
+    "width": 40,
+    "height": 58
+  },
+  "bar_hsv_lower": [
+    33,
+    100,
+    90
+  ],
+  "bar_hsv_upper": [
+    70,
+    255,
+    255
+  ],
+  "fish_hsv_lower": [
+    86,
+    110,
+    100
+  ],
+  "fish_hsv_upper": [
+    108,
+    255,
+    245
+  ],
+  "bar_min_area": 400,
+  "fish_min_area": 50,
+  "fish_margin_top": 8,
+  "fish_margin_bottom": 95,
+  "lookahead": 0.2,
+  "vel_window": 0.11,
+  "aim_offset": 0.0,
+  "min_pulse": 0.03,
+  "fps": 60,
+  "auto_focus": true,
+  "game_title": "Stardew",
+  "full_auto": false,
+  "cast_target": {
+    "x": 960,
+    "y": 830
+  },
+  "cast_power": 0.12,
+  "cast_settle": 1.7,
+  "wait_timeout": 30,
+  "bite_mode": "vision",
+  "bite_sound_ratio": 3.5,
+  "bite_sound_floor": 0.03,
+  "bite_refractory": 1.0,
+  "bite_change": 0.3,
+  "minigame_grace": 1.6,
+  "bar_grace": 0.35,
+  "post_catch_delay": 1.3
+}
