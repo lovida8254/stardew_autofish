@@ -11,6 +11,7 @@ import os
 import threading
 import time
 import ctypes
+import traceback
 from datetime import datetime
 
 import tkinter as tk
@@ -35,6 +36,7 @@ class AssistGUI:
         self.running = False
         self.thread = None
         self.status = "정지"          # 워커가 갱신, GUI가 폴링해서 표시
+        self.worker_error = None      # 워커가 예외로 죽으면 여기에 사유 기록(GUI가 감지)
         self._build_ui()
 
     # ---------------------------------------------------------------- UI
@@ -66,6 +68,7 @@ class AssistGUI:
         if self.running:
             return
         self.running = True
+        self.worker_error = None
         self.status = "대기중"
         self.thread = threading.Thread(target=self._worker, daemon=True)
         self.thread.start()
@@ -87,7 +90,9 @@ class AssistGUI:
         interval = 1.0 / max(int(cfg["fps"]), 5)
         bar_grace = float(cfg.get("bar_grace", 0.35))
         min_pulse = float(cfg.get("min_pulse", 0.0))
+        confirm_frames = int(cfg.get("confirm_frames", 3))   # 진입 확정에 필요한 연속 프레임
         in_prev = False
+        confirm = 0                 # 초록바+물고기 동시 검출 연속 프레임 카운터(진입 게이트)
         last_press = False
         bar_seen_t = 0.0
         last_log = 0.0
@@ -120,62 +125,113 @@ class AssistGUI:
                 log("  << 미니게임#%d 종료 — %.1f초 %d프레임, 물고기 검출 0%% (색/위치 확인 필요)"
                     % (mg_no, dur, mg_frames))
 
+        err_streak = 0                              # 연속 프레임 오류 카운터
         try:
             with mss.mss() as sct:
                 while self.running:
                     t0 = time.time()
-                    frame = grab(sct, cfg["roi"])
-                    bar, fish, _, _ = detect(frame, cfg)
-                    if bar is not None:
-                        bar_seen_t = t0
-                        # focus_window 안 함: 보조모드는 사용자가 직접 플레이 중이라 게임이 이미
-                        # 포그라운드다. 매 프레임 재포커스(ALT트릭)하면 게임이 멈춘다(freeze). 제거.
-                        press = ctrl.update(t0, bar, fish)
-                        last_press = press
-                        mouse.set(press, t0, min_pulse)
-                        if not in_prev:                       # 미니게임 시작 전이(transition)
-                            in_prev = True
-                            mg_no += 1
-                            mg_frames = 0
-                            mg_fish = 0
-                            mg_inside = 0
-                            mg_errs = []
-                            mg_start = t0
-                            log(">> 미니게임#%d 시작" % mg_no)
-                        mg_frames += 1
-                        bc = int(bar["center"])
-                        fy = int(fish["center"]) if fish else None
-                        if fy is not None:
-                            mg_fish += 1
-                            mg_errs.append(abs(bc - fy))
-                            if bar["top"] <= fish["center"] <= bar["bottom"]:
-                                mg_inside += 1                # 물고기가 초록 바 안에 있음
-                        self.status = "미니게임 제어중  bar=%d fish=%s" % (bc, fy)
-                        if t0 - last_log >= 0.1:              # 0.1초 간격 상세 로그
-                            log("   bar=%d fish=%s vel=%.0f pred=%d %s"
-                                % (bc, fy, ctrl.last_vel, int(ctrl.last_pred),
-                                   "UP" if press else "DOWN"))
-                            last_log = t0
-                    elif in_prev and (t0 - bar_seen_t) < bar_grace:
-                        # 순간 끊김(초록 flicker) — 리셋하지 말고 직전 동작 유지(연속성 보존)
-                        mouse.set(last_press, t0, min_pulse)
-                    else:
-                        if in_prev:
+                    try:
+                        frame = grab(sct, cfg["roi"])
+                        bar, fish, _, _ = detect(frame, cfg)
+
+                        if not in_prev:
+                            # ---- 아직 미니게임 아님: 진입 게이트만 평가(마우스 절대 안 누름) ----
+                            # 진짜 미니게임 = 초록 바 + 청록 물고기가 '함께' 있음. 메뉴/배경 초록이나
+                            # 물고기 없는 정적 초록(phantom)에 낚이지 않도록, 둘 다 연속 검출돼야 확정.
+                            if bar is not None and fish is not None:
+                                confirm += 1
+                            else:
+                                confirm = 0
+                            if confirm >= confirm_frames:
+                                in_prev = True
+                                confirm = 0
+                                mg_no += 1
+                                mg_frames = 0
+                                mg_fish = 0
+                                mg_inside = 0
+                                mg_errs = []
+                                mg_start = t0
+                                bar_seen_t = t0
+                                log(">> 미니게임#%d 시작" % mg_no)
+                                # 확정 프레임부터 바로 제어
+                                press = ctrl.update(t0, bar, fish)
+                                last_press = press
+                                mouse.set(press, t0, min_pulse)
+                                mg_frames += 1
+                                bc = int(bar["center"])
+                                fy = int(fish["center"])
+                                mg_fish += 1
+                                mg_errs.append(abs(bc - fy))
+                                if bar["top"] <= fish["center"] <= bar["bottom"]:
+                                    mg_inside += 1
+                                self.status = "미니게임 제어중  bar=%d fish=%s" % (bc, fy)
+                            else:
+                                # 미확정 — phantom일 수 있으니 마우스 놓고 대기
+                                ctrl.reset()
+                                mouse.up()
+                                self.status = "대기중 — 직접 캐스팅→'!' 후킹하세요"
+                        elif bar is not None:
+                            # ---- 확정된 미니게임 진행 중 ----
+                            # focus_window 안 함: 보조모드는 게임이 이미 포그라운드. 재포커스하면 freeze.
+                            bar_seen_t = t0
+                            press = ctrl.update(t0, bar, fish)
+                            last_press = press
+                            mouse.set(press, t0, min_pulse)
+                            mg_frames += 1
+                            bc = int(bar["center"])
+                            fy = int(fish["center"]) if fish else None
+                            if fy is not None:                    # 진행 중 물고기 순간 미검출은 허용(빠른물고기)
+                                mg_fish += 1
+                                mg_errs.append(abs(bc - fy))
+                                if bar["top"] <= fish["center"] <= bar["bottom"]:
+                                    mg_inside += 1                # 물고기가 초록 바 안에 있음
+                            self.status = "미니게임 제어중  bar=%d fish=%s" % (bc, fy)
+                            if t0 - last_log >= 0.1:              # 0.1초 간격 상세 로그
+                                log("   bar=%d fish=%s vel=%.0f pred=%d %s"
+                                    % (bc, fy, ctrl.last_vel, int(ctrl.last_pred),
+                                       "UP" if press else "DOWN"))
+                                last_log = t0
+                        elif (t0 - bar_seen_t) < bar_grace:
+                            # 순간 끊김(초록 flicker) — 리셋하지 말고 직전 동작 유지(연속성 보존)
+                            mouse.set(last_press, t0, min_pulse)
+                        else:
                             in_prev = False
-                            summarize()                       # 미니게임 종료 요약
-                        ctrl.reset()
-                        mouse.up()
-                        self.status = "대기중 — 직접 캐스팅→'!' 후킹하세요"
+                            confirm = 0
+                            summarize()                           # 미니게임 종료 요약
+                            ctrl.reset()
+                            mouse.up()
+                            self.status = "대기중 — 직접 캐스팅→'!' 후킹하세요"
+                        err_streak = 0
+                    except Exception as e:
+                        # 프레임 단위 오류는 세션을 죽이지 않고 로그만 남기고 계속(일시적 글리치 방어).
+                        err_streak += 1
+                        log("   [프레임 오류 %d] %s: %s" % (err_streak, type(e).__name__, e))
+                        try:
+                            mouse.up()                            # 오류 시 마우스는 반드시 놓아 안전 확보
+                        except Exception:
+                            pass
+                        if err_streak >= 30:                      # ~0.5초 연속 오류면 세션 중단
+                            self.worker_error = "연속 프레임 오류 %d회 (%s)" % (err_streak, type(e).__name__)
+                            log("   [치명] " + self.worker_error + " — 세션 중단\n" + traceback.format_exc())
+                            break
                     el = time.time() - t0
                     if el < interval:
                         time.sleep(interval - el)
+        except Exception as e:
+            # while 루프 밖(mss 초기화 등) 예외 — 이전엔 여기서 조용히 죽어 버튼만 [종료]로 남았음.
+            self.worker_error = "%s: %s" % (type(e).__name__, e)
+            log("[치명적 오류] 워커 중단\n" + traceback.format_exc())
         finally:
             if in_prev:
                 summarize()
-            mouse.up()                              # 정지 시 반드시 버튼 떼기
-            log("[%s] 세션 종료" % datetime.now().strftime("%H:%M:%S"))
+            try:
+                mouse.up()                          # 정지 시 반드시 버튼 떼기
+            except Exception:
+                pass
+            tail = "" if not self.worker_error else "  (오류: %s)" % self.worker_error
+            log("[%s] 세션 종료%s" % (datetime.now().strftime("%H:%M:%S"), tail))
             self._close_log()
-            self.status = "정지"
+            self.status = "정지" if not self.worker_error else ("오류 중단: %s" % self.worker_error)
 
     # ---------------------------------------------------------------- 로깅
     def _open_log(self, cfg):
@@ -214,7 +270,15 @@ class AssistGUI:
     # ---------------------------------------------------------------- 상태 표시 폴링
     def _poll(self):
         if self.running:
-            self.lbl.config(text=self.status, fg="#111")
+            # 워커 스레드가 예외로 조용히 죽었는지 감지 → 버튼/상태 복구(안 그러면 [종료]로 멈춰 보임).
+            if self.thread is not None and not self.thread.is_alive():
+                self.running = False
+                self.thread = None
+                self.btn.config(text="시작", bg="#2ecc71", activebackground="#27ae60")
+                msg = self.worker_error or "알 수 없는 오류"
+                self.lbl.config(text="오류로 멈춤: %s — 로그 확인 후 다시 [시작]" % msg, fg="#c0392b")
+            else:
+                self.lbl.config(text=self.status, fg="#111")
         else:
             self.lbl.config(text="정지 — [시작]을 누르세요", fg="#555")
         self.root.after(120, self._poll)

@@ -57,5 +57,6 @@
   "bite_change": 0.3,
   "minigame_grace": 1.6,
   "bar_grace": 0.35,
+  "confirm_frames": 3,
   "post_catch_delay": 1.3
 }
