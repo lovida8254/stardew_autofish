@@ -1,7 +1,16 @@
 # 작업 기록 / 이어서 하기 (2026-07-10 최신)
 
-Stardew Valley 자동 낚시 봇. 화면 인식 + 마우스 제어로 낚시 미니게임을 자동 플레이.
-`gui.py`(권장) 또는 `main.py` CLI로 실행. 설정은 `config.json`(없으면 `main.DEFAULT_CONFIG`로 생성).
+Stardew Valley 자동 낚시 봇(보조 모드). 사용자가 캐스팅+후킹, 봇은 미니게임 바만 제어.
+**실행: `assist_gui.py`(시작/종료 버튼 GUI) 또는 `StardewAutoFishing.exe`.** 설정은 `config.json`.
+
+## ✅ 오늘 세션 마무리 (2026-07-10)
+
+- **완료·확정**: ①빠른 물고기 시뮬 재작성+바 물리 실측(G~780/VMAX~920) ②lookahead=0.20 튜닝·라이브 검증(일반~빠른 잘 잡힘, 매우빠른/erratic은 물리 한계=수동) ③GUI화(시작/종료 버튼, 자동종료·freeze 제거) ④exe 빌드 ⑤한글 README ⑥GitHub 개인계정 커밋/푸시(최신 `5735520`).
+- **exe는 로컬 사용만**(GitHub Release 안 만듦 — 사용자 결정). 필요 시 `gh release create v1.0 dist/StardewAutoFishing.exe`로 언제든 배포 가능.
+- **다음에 할 수 있는 것(선택, 급하지 않음)**:
+  1. assist가 낚시 시작 전 배경초록을 미니게임 오검출(fish=None 허수) → calib_bar처럼 '바+물고기' 확정 게이트 추가하면 깔끔(실낚시엔 무해).
+  2. 매우 빠른 물고기 = 물리 한계로 확정됨. 더 잡고 싶으면 게임/입력 레벨 얘기라 소프트웨어로는 불가.
+  3. 원하면 exe를 GitHub Release로 배포.
 
 ## 🖥️ GUI + exe 화 (2026-07-10) — 시작/종료 버튼, 자동종료 제거
 
