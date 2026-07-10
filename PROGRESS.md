@@ -1,7 +1,13 @@
-# 작업 기록 / 이어서 하기 (2026-07-09)
+# 작업 기록 / 이어서 하기 (2026-07-10 최신)
 
 Stardew Valley 자동 낚시 봇. 화면 인식 + 마우스 제어로 낚시 미니게임을 자동 플레이.
 `gui.py`(권장) 또는 `main.py` CLI로 실행. 설정은 `config.json`(없으면 `main.DEFAULT_CONFIG`로 생성).
+
+## 📦 저장소 (GitHub) — 2026-07-10 초기 커밋/푸시
+- **Repo**: https://github.com/lovida8254/stardew_autofish (**Public**, 개인계정 lovida8254)
+- **origin**: `git@github.com-personal:lovida8254/stardew_autofish.git` (SSH 별칭). 푸시는 `git push`만.
+- **초기 커밋** `a3e011b`: 소스 14파일. `.gitignore`로 생성물 제외(`__pycache__`, `roi_dbg_*.png`, `calib_samples.csv`, `fishlog.csv`).
+- **폴더 매핑**: `~/.gitconfig`에 `includeIf "gitdir/i:V:/00_Projects_game/"` → `~/.gitconfig-personal` 추가함 → 이 폴더 하위 프로젝트는 자동으로 개인계정(lovida8254) 커밋. (gh 활성계정은 업무 Lovida82로 복원했으나 이 repo는 SSH라 무관.)
 
 ## ✅ 2026-07-10 완료 — 아주 빠른 물고기: 시뮬레이터 재작성 + 확정 결론
 
